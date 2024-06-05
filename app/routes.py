@@ -1,14 +1,17 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_from_directory, jsonify, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_from_directory, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.hazmat.primitives.asymmetric import dh, rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.backends import default_backend
 from .models import User, Book
 from . import db
-from .decorators import login_required, admin_required
+from .decorators import login_required
 import os
 import re
 
 main = Blueprint('main', __name__)
 
-# 密码验证函数
+
 def validate_password(password):
     if len(password) < 15:
         return False
@@ -48,7 +51,7 @@ def register():
             return redirect(url_for('main.register'))
         
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-        new_user = User(username=username, password=hashed_password, role='user')  
+        new_user = User(username=username, password=hashed_password)
         db.session.add(new_user)
         db.session.commit()
         
@@ -82,7 +85,6 @@ def login():
             return redirect(url_for('main.login'))
         
         session['user_id'] = user.id
-        session['role'] = user.role
         flash('Login successful!')
         return redirect(url_for('main.index'))
     
@@ -91,16 +93,15 @@ def login():
 @main.route('/logout')
 def logout():
     session.pop('user_id', None)
-    session.pop('role', None)
     flash('You have been logged out.')
     return redirect(url_for('main.index'))
 
 @main.route('/reset_password', methods=['GET', 'POST'])
 def reset_password():
-    if request.method == ('POST'):
+    if request.method == 'POST':
         email = request.form.get('email')
         
-        # 实际项目中，这里应验证电子邮件并生成重置链接
+        
         flash('Password reset link has been sent to your email!')
         return redirect(url_for('main.login'))
     
@@ -129,32 +130,43 @@ def download(filename):
     directory = os.path.join(main.root_path, 'static/book')
     return send_from_directory(directory, filename, as_attachment=True)
 
-@main.route('/admin')
-@login_required
-@admin_required
-def admin_dashboard():
-    users = User.query.all()
-    books = Book.query.all()
-    return render_template('admin/admin_dashboard.html', users=users, books=books)
 
-@main.route('/make_admin/<int:user_id>')
-@login_required
-@admin_required
-def make_admin(user_id):
-    user = User.query.get(user_id)
-    if user:
-        user.role = 'admin'
-        db.session.commit()
-        flash(f'User {user.username} is now an admin.')
-    return redirect(url_for('main.admin_dashboard'))
+@main.route('/dh_key_exchange')
+def dh_key_exchange():
 
-@main.route('/delete_book/<int:book_id>')
-@login_required
-@admin_required
-def delete_book(book_id):
-    book = Book.query.get(book_id)
-    if book:
-        db.session.delete(book)
-        db.session.commit()
-        flash(f'Book {book.title} has been deleted.')
-    return redirect(url_for('main.admin_dashboard'))
+    parameters = dh.generate_parameters(generator=2, key_size=2048, backend=default_backend())
+    server_private_key = parameters.generate_private_key()
+    server_public_key = server_private_key.public_key()
+    
+   
+    server_public_key_pem = server_public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return server_public_key_pem
+
+
+@main.route('/sign_data', methods=['POST'])
+def sign_data():
+    data = request.form.get('data').encode('utf-8')
+    
+    
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    public_key = private_key.public_key()
+    
+   
+    signature = private_key.sign(
+        data,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    
+    
+    public_key_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return jsonify({'signature': signature.hex(), 'public_key': public_key_pem.decode('utf-8')})
