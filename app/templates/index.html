@@ -1,59 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Library Management System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <header>
-        <nav>
-            <ul>
-                <li><a href="{{ url_for('main.index') }}">Home</a></li>
-                {% if 'user_id' not in session %}
-                    <li><a href="{{ url_for('main.register') }}">Register</a></li>
-                    <li><a href="{{ url_for('main.login') }}">Login</a></li>
-                {% else %}
-                    <li><a href="{{ url_for('main.search') }}">Search</a></li>
-                    <li><a href="{{ url_for('main.books') }}">Books</a></li>
-                    <li><a href="{{ url_for('main.logout') }}">Logout</a></li>
-                {% endif %}
-            </ul>
-        </nav>
-    </header>
-    <main>
-        <h1>Welcome to the Library Management System</h1>
-        <button id="dh-exchange-btn">Diffie-Hellman Key Exchange</button>
-        <button id="sign-data-btn">Sign Data</button>
-        <pre id="output"></pre>
-    </main>
-    <footer>
-        <p>&copy; 2024 Library Management System</p>
-    </footer>
-    <script>
-        document.getElementById('dh-exchange-btn').addEventListener('click', async function() {
-            const response = await fetch('/dh_key_exchange');
-            const serverPublicKey = await response.text();
-            document.getElementById('output').innerText = 'Server Public Key:\n' + serverPublicKey;
-        });
+{% extends "base.html" %}
 
-        document.getElementById('sign-data-btn').addEventListener('click', async function() {
-            const data = prompt('Enter data to sign:');
-            if (data) {
-                const response = await fetch('/sign_data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: new URLSearchParams({
-                        'data': data
-                    })
-                });
-                const result = await response.json();
-                document.getElementById('output').innerText = 'Signature:\n' + result.signature + '\n\nPublic Key:\n' + result.public_key;
-            }
-        });
-    </script>
-</body>
-</html>
+{% block title %}Home{% endblock %}
+
+{% block content %}
+    <h1>Welcome to the Library Management System</h1>
+    <p>Search, access, and download books anytime.</p>
+{% endblock %}
