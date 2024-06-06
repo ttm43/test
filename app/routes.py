@@ -8,7 +8,7 @@ import re
 
 main = Blueprint('main', __name__)
 
-# 密码验证函数
+
 def validate_password(password):
     if len(password) < 15:
         return False
@@ -100,7 +100,7 @@ def reset_password():
     if request.method == ('POST'):
         email = request.form.get('email')
         
-        # 实际项目中，这里应验证电子邮件并生成重置链接
+        
         flash('Password reset link has been sent to your email!')
         return redirect(url_for('main.login'))
     
