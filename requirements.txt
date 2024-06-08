@@ -2,3 +2,5 @@ flask
 flask-session
 flask-sqlalchemy
 python-dotenv
+flask-main
+flask-wtf
