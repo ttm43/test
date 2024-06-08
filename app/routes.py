@@ -1,10 +1,13 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_from_directory, jsonify, abort
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from .models import User, Book
-from . import db
+from . import db, mail
 from .decorators import login_required, admin_required
 import os
 import re
+import secrets
+from flask_mail import Message
 
 main = Blueprint('main', __name__)
 
@@ -95,16 +98,47 @@ def logout():
     flash('You have been logged out.')
     return redirect(url_for('main.index'))
 
+
 @main.route('/reset_password', methods=['GET', 'POST'])
 def reset_password():
-    if request.method == ('POST'):
+    if request.method == 'POST':
         email = request.form.get('email')
-        
-        
-        flash('Password reset link has been sent to your email!')
-        return redirect(url_for('main.login'))
-    
+        user = User.query.filter_by(username=email).first() 
+        if user:
+            token = secrets.token_hex(16)
+            user.reset_token = token
+            db.session.commit()
+            reset_url = url_for('main.reset_token', token=token, _external=True)
+            msg = Message('Password Reset Request',
+                          recipients=[user.username],  
+                          body=f'To reset your password, visit the following link: {reset_url}')
+            try:
+                mail.send(msg)
+                flash('An email has been sent with instructions to reset your password.', 'info')
+            except Exception as e:
+                flash(f'Failed to send email: {str(e)}', 'danger')
+                print(f"Failed to send email: {str(e)}")
+            return redirect(url_for('main.login'))
+        else:
+            flash('No account found with that email.', 'danger')
+            return redirect(url_for('main.reset_password'))
     return render_template('reset_password.html')
+
+@main.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_token(token):
+    user = User.query.filter_by(reset_token=token).first_or_404()
+    if request.method == 'POST':
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        if password != confirm_password:
+            flash('Passwords do not match!', 'danger')
+            return redirect(url_for('main.reset_token', token=token))
+        user.password = generate_password_hash(password)
+        user.reset_token = None
+        db.session.commit()
+        flash('Your password has been updated!', 'success')
+        return redirect(url_for('main.login'))
+    return render_template('reset_token.html', token=token)
 
 @main.route('/search', methods=['GET'])
 @login_required
@@ -148,6 +182,34 @@ def make_admin(user_id):
         flash(f'User {user.username} is now an admin.')
     return redirect(url_for('main.admin_dashboard'))
 
+@main.route('/admin/upload_book', methods=['POST'])
+@login_required
+@admin_required
+def upload_book():
+    title = request.form.get('title')
+    author = request.form.get('author')
+    file = request.files['file']
+    
+    if not title or not author or 'file' not in request.files:
+        flash('All fields are required.')
+        return redirect(url_for('main.admin_dashboard'))
+    
+    if file.filename == '':
+        flash('No selected file')
+        return redirect(url_for('main.admin_dashboard'))
+    
+    if file:
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(main.root_path, 'static/book', filename)
+        file.save(file_path)
+        
+        new_book = Book(title=title, author=author, file_path='static/book/' + filename)
+        db.session.add(new_book)
+        db.session.commit()
+        
+        flash('Book uploaded and added successfully!')
+        return redirect(url_for('main.admin_dashboard'))
+
 @main.route('/delete_book/<int:book_id>')
 @login_required
 @admin_required
@@ -157,4 +219,18 @@ def delete_book(book_id):
         db.session.delete(book)
         db.session.commit()
         flash(f'Book {book.title} has been deleted.')
+    return redirect(url_for('main.admin_dashboard'))
+
+@main.route('/admin/delete_user/<int:user_id>')
+@login_required
+@admin_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role == 'admin':
+        flash('Cannot delete admin user!')
+        return redirect(url_for('main.admin_dashboard'))
+    
+    db.session.delete(user)
+    db.session.commit()
+    flash('User deleted successfully!')
     return redirect(url_for('main.admin_dashboard'))
